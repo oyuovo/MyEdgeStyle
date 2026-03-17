@@ -1,7 +1,4 @@
-/**
- * MyEdgeStyle 新标签页：时间、天气、壁纸、毛玻璃
- * 配置从 chrome.storage.local 读取
- */
+/** MyEdgeStyle 新标签页，配置来自 chrome.storage.local */
 
 const DEFAULT_CONFIG = {
   useDefaultNewTab: false,
@@ -19,14 +16,12 @@ const DEFAULT_CONFIG = {
   searchEngine: 'bing'
 };
 
-// 搜索引擎：默认 Bing，用户可在扩展设置中切换
 const SEARCH_ENGINES = {
   bing: { url: 'https://www.bing.com/search?q=', placeholder: '在 Bing 上搜索...' },
   google: { url: 'https://www.google.com/search?q=', placeholder: '在 Google 上搜索...' },
   baidu: { url: 'https://www.baidu.com/s?wd=', placeholder: '在百度上搜索...' }
 };
 
-// 天气地区（Open-Meteo 用经纬度），默认南京
 const WEATHER_CITIES = {
   nanjing: { name: '南京', lat: 32.06, lon: 118.80, timezone: 'Asia/Shanghai' },
   beijing: { name: '北京', lat: 39.90, lon: 116.41, timezone: 'Asia/Shanghai' },
@@ -64,7 +59,6 @@ function getStorage() {
   });
 }
 
-// ---------- 默认新标签页重定向 ----------
 function maybeRedirect() {
   if (config.useDefaultNewTab) {
     try {
@@ -73,7 +67,6 @@ function maybeRedirect() {
   }
 }
 
-// ---------- 时间组件 ----------
 function formatTime(date, use24, tz) {
   const opts = { timeZone: tz || config.timezone, hour12: !use24 };
   const time = date.toLocaleTimeString('zh-CN', { ...opts, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -108,7 +101,6 @@ function initTime() {
   setInterval(renderTime, 1000);
 }
 
-// ---------- 搜索 ----------
 function initSearch() {
   const form = document.getElementById('search-form');
   const input = document.getElementById('search-input');
@@ -124,7 +116,6 @@ function initSearch() {
   });
 }
 
-// ---------- 天气组件（Open-Meteo 免 key）----------
 function getWeatherCity() {
   const id = config.weatherCityId || 'nanjing';
   return WEATHER_CITIES[id] || WEATHER_CITIES.nanjing;
@@ -169,9 +160,7 @@ async function renderWeather() {
   `;
 }
 
-// ---------- 壁纸 ----------
 function getWallpaperUrl() {
-  // 优先使用已缓存的解析后 URL
   if (config.wallpaperResolvedUrl && String(config.wallpaperResolvedUrl).trim()) {
     return config.wallpaperResolvedUrl;
   }
@@ -192,11 +181,9 @@ function applyWallpaper() {
   }
 }
 
-// 保证壁纸解析结果写入本地缓存，避免每次重新计算
 function ensureWallpaperCache() {
   const url = getWallpaperUrl();
   if (!url) return;
-  // 若已存在缓存则不重复写入
   if (config.wallpaperResolvedUrl === url && config.wallpaperUpdatedAt) {
     return;
   }
@@ -216,7 +203,6 @@ function saveNewtabConfig(updates) {
   chrome.storage?.local?.set({ newtab }, () => {});
 }
 
-// ---------- 毛玻璃镶边 ----------
 function applyGlass() {
   const topEl = document.getElementById('glass-top');
   const bottomEl = document.getElementById('glass-bottom');
@@ -232,7 +218,6 @@ function applyGlass() {
   }
 }
 
-// ---------- 占位与可见性 ----------
 function updatePlaceholder() {
   const ph = document.getElementById('placeholder');
   if (!ph) return;
@@ -242,46 +227,147 @@ function updatePlaceholder() {
   else ph.style.display = '';
 }
 
-// ---------- 收藏夹 ----------
-function flattenBookmarks(nodes, pathPrefix = '') {
+const FAVORITES_GROUP_NAMES = {
+  'Bookmarks Bar': '收藏夹栏',
+  'Other Bookmarks': '其他收藏夹',
+  'Mobile Bookmarks': '移动设备收藏夹',
+  '书签栏': '收藏夹栏'
+};
+
+function flattenNodeToItems(node, pathPrefix = '', rootTitle = '') {
   const list = [];
-  for (const node of nodes) {
-    const currentPath = node.title ? (pathPrefix ? `${pathPrefix}/${node.title}` : node.title) : pathPrefix;
-    if (node.url) {
-      list.push({
-        title: node.title || node.url,
-        url: node.url,
-        folderPath: pathPrefix || ''
-      });
-    }
-    if (node.children && node.children.length) {
-      list.push(...flattenBookmarks(node.children, currentPath));
+  const currentPath = node.title ? (pathPrefix ? `${pathPrefix}/${node.title}` : node.title) : pathPrefix;
+  const root = rootTitle || node.title || '';
+  if (node.url) {
+    list.push({
+      title: node.title || node.url,
+      url: node.url,
+      folderPath: pathPrefix || '',
+      rootTitle: root
+    });
+  }
+  if (node.children && node.children.length) {
+    for (const child of node.children) {
+      list.push(...flattenNodeToItems(child, currentPath, root));
     }
   }
   return list;
 }
 
-function renderFavoritesList(items) {
-  const scroller = document.getElementById('favorites-scroller');
-  if (!scroller) return;
-  if (!items.length) {
-    scroller.textContent = '暂无收藏内容';
-    return;
+function getBookmarksGroupedByRoot() {
+  return new Promise((resolve) => {
+    if (!chrome?.bookmarks?.getTree) {
+      resolve([]);
+      return;
+    }
+    chrome.bookmarks.getTree((tree) => {
+      const root = tree && tree[0];
+      if (!root || !root.children || !root.children.length) {
+        resolve([]);
+        return;
+      }
+      const groups = [];
+      for (const node of root.children) {
+        const name = FAVORITES_GROUP_NAMES[node.title] || node.title || '收藏';
+        const items = flattenNodeToItems(node, '', node.title);
+        if (items.length) groups.push({ name, rootTitle: node.title, items });
+      }
+      resolve(groups);
+    });
+  });
+}
+
+function matchBookmark(item, query) {
+  if (!query || !query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  const title = (item.title || '').toLowerCase();
+  const url = (item.url || '').toLowerCase();
+  return title.includes(q) || url.includes(q);
+}
+
+function buildUncategorizedAndFolders(groups, query) {
+  const rootNameMap = {};
+  for (const g of groups) rootNameMap[g.rootTitle] = g.name;
+
+  const uncategorized = [];
+  const byFolder = new Map();
+  for (const g of groups) {
+    for (const item of g.items) {
+      if (query && query.trim() && !matchBookmark(item, query)) continue;
+      const inSubfolder = item.folderPath && item.folderPath.includes('/');
+      if (!inSubfolder && (item.folderPath === item.rootTitle || !item.folderPath)) {
+        uncategorized.push(item);
+      } else {
+        const displayPath = item.folderPath
+          ? item.folderPath.replace(item.rootTitle, rootNameMap[item.rootTitle] || item.rootTitle)
+          : (rootNameMap[item.rootTitle] || item.rootTitle);
+        if (!byFolder.has(displayPath)) byFolder.set(displayPath, []);
+        byFolder.get(displayPath).push(item);
+      }
+    }
   }
-  const maxItems = 50;
-  const sliced = items.slice(0, maxItems);
-  scroller.innerHTML = '';
-  for (const item of sliced) {
-    const a = document.createElement('a');
+  const sections = [];
+  if (uncategorized.length) sections.push({ name: '未分类', items: uncategorized });
+  const sortedPaths = [...byFolder.keys()].sort();
+  for (const path of sortedPaths) sections.push({ name: path, items: byFolder.get(path) });
+  return sections;
+}
+
+function createFavoriteItemEl(item, useNavCard = false) {
+  const a = document.createElement('a');
+  const title = item.title || item.url;
+  const initial = title.trim().charAt(0).toUpperCase();
+  if (useNavCard) {
+    a.className = 'nav-card';
+    a.href = item.url;
+    a.title = item.url;
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'nav-card-icon';
+    const faviconUrl = getFaviconUrl(item.url, 32);
+    if (faviconUrl) {
+      const img = document.createElement('img');
+      img.className = 'nav-card-icon-img';
+      img.src = faviconUrl;
+      img.alt = '';
+      const fallback = document.createElement('span');
+      fallback.className = 'nav-card-icon-fallback';
+      fallback.textContent = initial;
+      fallback.hidden = true;
+      img.onerror = () => {
+        if (!img.dataset.fallbackTried) {
+          const next = getFallbackFaviconUrl(item.url, 32);
+          if (next) {
+            img.dataset.fallbackTried = '1';
+            img.src = next;
+            return;
+          }
+        }
+        img.hidden = true;
+        fallback.hidden = false;
+      };
+      iconWrap.appendChild(img);
+      iconWrap.appendChild(fallback);
+    } else {
+      const fallback = document.createElement('span');
+      fallback.className = 'nav-card-icon-fallback';
+      fallback.textContent = initial;
+      iconWrap.appendChild(fallback);
+    }
+    const titleEl = document.createElement('span');
+    titleEl.className = 'nav-card-title';
+    titleEl.textContent = title;
+    a.appendChild(iconWrap);
+    a.appendChild(titleEl);
+  } else {
     a.className = 'favorite-item';
     a.href = item.url;
-    a.title = item.folderPath ? `${item.title}\n${item.folderPath}` : item.title;
+    a.title = item.folderPath ? `${title}\n${item.folderPath}` : title;
     const icon = document.createElement('span');
     icon.className = 'favorite-icon';
-    icon.textContent = (item.title || item.url).trim().charAt(0).toUpperCase();
+    icon.textContent = initial;
     const textWrap = document.createElement('span');
     textWrap.className = 'favorite-text';
-    textWrap.textContent = item.title || item.url;
+    textWrap.textContent = title;
     a.appendChild(icon);
     a.appendChild(textWrap);
     if (item.folderPath) {
@@ -290,33 +376,115 @@ function renderFavoritesList(items) {
       folder.textContent = ` · ${item.folderPath}`;
       a.appendChild(folder);
     }
-    scroller.appendChild(a);
+  }
+  return a;
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function getFaviconUrl(pageUrl, size) {
+  if (!pageUrl || typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.getURL) return '';
+  try {
+    new URL(pageUrl);
+  } catch (_) {
+    return '';
+  }
+  const base = chrome.runtime.getURL('/_favicon/');
+  const url = new URL(base);
+  url.searchParams.set('pageUrl', pageUrl);
+  url.searchParams.set('size', String(size || 32));
+  return url.toString();
+}
+
+function getFallbackFaviconUrl(pageUrl, size) {
+  try {
+    const host = new URL(pageUrl).hostname;
+    if (!host) return '';
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=${size || 32}`;
+  } catch (_) {
+    return '';
   }
 }
 
-let favoritesLoaded = false;
-
-function initFavorites() {
-  const toggle = document.getElementById('favorites-toggle');
-  const panel = document.getElementById('favorites-panel');
-  if (!toggle || !panel || !chrome?.bookmarks) return;
-
-  toggle.addEventListener('click', () => {
-    const expanded = toggle.getAttribute('aria-expanded') === 'true';
-    const next = !expanded;
-    toggle.setAttribute('aria-expanded', String(next));
-    panel.hidden = !next;
-    if (next && !favoritesLoaded) {
-      chrome.bookmarks.getTree((tree) => {
-        const items = flattenBookmarks(tree || []);
-        renderFavoritesList(items);
-        favoritesLoaded = true;
-      });
+function renderFavoritesNav(groups, query) {
+  const content = document.getElementById('favorites-nav-content');
+  if (!content) return;
+  const sections = buildUncategorizedAndFolders(groups, query);
+  content.innerHTML = '';
+  if (!sections.length) {
+    content.textContent = query ? '无匹配收藏' : '暂无收藏内容';
+    return;
+  }
+  for (const s of sections) {
+    const section = document.createElement('div');
+    section.className = 'favorites-group';
+    section.innerHTML = `<div class="favorites-group-title">${escapeHtml(s.name)}</div>`;
+    const list = document.createElement('div');
+    list.className = 'favorites-group-list';
+    for (const item of s.items) {
+      list.appendChild(createFavoriteItemEl(item, true));
     }
-  });
+    section.appendChild(list);
+    content.appendChild(section);
+  }
 }
 
-// ---------- 初始化 ----------
+let favoritesData = null;
+
+function ensureFavoritesData() {
+  return favoritesData
+    ? Promise.resolve(favoritesData)
+    : getBookmarksGroupedByRoot().then((groups) => {
+        favoritesData = groups;
+        return groups;
+      });
+}
+
+function initFavorites() {
+  const navSearch = document.getElementById('favorites-nav-search');
+  const tabHome = document.getElementById('tab-home');
+  const tabFavorites = document.getElementById('tab-favorites');
+  const viewHome = document.getElementById('view-home');
+  const viewFavorites = document.getElementById('view-favorites');
+
+  function applyFilterNav() {
+    const q = navSearch ? navSearch.value : '';
+    if (favoritesData) renderFavoritesNav(favoritesData, q);
+  }
+
+  if (tabHome && tabFavorites && viewHome && viewFavorites) {
+    tabHome.addEventListener('click', () => {
+      tabHome.classList.add('active');
+      tabHome.setAttribute('aria-selected', 'true');
+      tabFavorites.classList.remove('active');
+      tabFavorites.setAttribute('aria-selected', 'false');
+      viewHome.classList.remove('hidden');
+      viewFavorites.classList.add('hidden');
+    });
+    tabFavorites.addEventListener('click', () => {
+      tabFavorites.classList.add('active');
+      tabFavorites.setAttribute('aria-selected', 'true');
+      tabHome.classList.remove('active');
+      tabHome.setAttribute('aria-selected', 'false');
+      viewHome.classList.add('hidden');
+      viewFavorites.classList.remove('hidden');
+      ensureFavoritesData().then((groups) => {
+        renderFavoritesNav(groups, navSearch ? navSearch.value : '');
+      });
+    });
+  }
+
+  if (navSearch) {
+    navSearch.addEventListener('input', () => {
+      if (favoritesData) applyFilterNav();
+    });
+  }
+}
+
 async function init() {
   await getStorage();
   maybeRedirect();

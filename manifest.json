@@ -3,7 +3,7 @@
   "name": "MyEdgeStyle",
   "version": "1.0.0",
   "description": "Edge 扩展美化：自定义新标签页（时间、天气、壁纸、毛玻璃）",
-  "permissions": ["storage", "bookmarks"],
+  "permissions": ["storage", "bookmarks", "favicon"],
   "chrome_url_overrides": {
     "newtab": "src/newtab/index.html"
   },
