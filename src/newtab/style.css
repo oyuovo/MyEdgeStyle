@@ -1,0 +1,261 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+}
+
+/* 壁纸层 */
+.wallpaper {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 0;
+}
+
+/* 毛玻璃镶边 */
+.glass {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 48px;
+  pointer-events: none;
+  z-index: 1;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-top {
+  top: 0;
+}
+
+.glass-bottom {
+  top: auto;
+  bottom: 0;
+}
+
+#app {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.placeholder {
+  font-size: 1.25rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.placeholder:not(:only-child) {
+  display: none;
+}
+
+/* 时间组件 */
+.widget-time {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-time .time-main {
+  font-size: clamp(3rem, 10vw, 6rem);
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.widget-time .time-date {
+  font-size: 1rem;
+  opacity: 0.85;
+  margin-top: 0.25rem;
+}
+
+/* 天气组件 */
+.widget-weather {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 0.95rem;
+}
+
+.widget-weather .temp {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.widget-weather .desc {
+  opacity: 0.9;
+}
+
+.widget-weather .location {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+/* 搜索框 */
+.search-form {
+  display: flex;
+  align-items: center;
+  max-width: 560px;
+  width: 90%;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  padding: 4px 4px 4px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.search-form:focus-within {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px 10px 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 1rem;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.search-btn {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* 收藏夹 */
+.favorites {
+  margin-top: 0.5rem;
+  max-width: 720px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.favorites-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.favorites-title {
+  font-weight: 500;
+}
+
+.favorites-arrow {
+  transition: transform 0.2s ease;
+}
+
+.favorites-toggle[aria-expanded="true"] .favorites-arrow {
+  transform: rotate(180deg);
+}
+
+.favorites-panel {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 16px;
+  padding: 6px 4px 4px;
+  max-height: 220px;
+  width: 100%;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+.favorites-scroller {
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 4px 4px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.favorite-item {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.favorite-item:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.favorite-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+}
+
+.favorite-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.favorite-folder {
+  opacity: 0.7;
+  font-size: 0.7rem;
+  margin-left: 2px;
+}

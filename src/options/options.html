@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyEdgeStyle 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="page">
+    <h1>MyEdgeStyle 设置</h1>
+
+    <section>
+      <h2>新标签页</h2>
+      <label class="row">
+        <input type="checkbox" id="useDefaultNewTab">
+        <span>使用 Edge 默认新标签页（关闭本扩展的新标签页）</span>
+      </label>
+      <label class="row">
+        <span class="label">默认搜索引擎</span>
+        <select id="searchEngine">
+          <option value="bing">Bing</option>
+          <option value="google">Google</option>
+          <option value="baidu">百度</option>
+        </select>
+      </label>
+    </section>
+
+    <section>
+      <h2>组件显示</h2>
+      <label class="row">
+        <input type="checkbox" id="showTime" checked>
+        <span>显示时间</span>
+      </label>
+      <label class="row">
+        <input type="checkbox" id="showWeather" checked>
+        <span>显示天气（默认使用 Open-Meteo，免 Key）</span>
+      </label>
+      <label class="row">
+        <span class="label">天气地区</span>
+        <select id="weatherCityId">
+          <option value="nanjing">南京</option>
+          <option value="beijing">北京</option>
+          <option value="shanghai">上海</option>
+          <option value="guangzhou">广州</option>
+          <option value="shenzhen">深圳</option>
+          <option value="hangzhou">杭州</option>
+          <option value="chengdu">成都</option>
+          <option value="wuhan">武汉</option>
+          <option value="xian">西安</option>
+        </select>
+      </label>
+    </section>
+
+    <section>
+      <h2>时间格式</h2>
+      <label class="row">
+        <input type="radio" name="timeFormat" value="24" id="time24" checked>
+        <span>24 小时制</span>
+      </label>
+      <label class="row">
+        <input type="radio" name="timeFormat" value="12" id="time12">
+        <span>12 小时制</span>
+      </label>
+      <label class="row">
+        <span class="label">时区</span>
+        <select id="timezone"></select>
+      </label>
+    </section>
+
+    <section>
+      <h2>壁纸</h2>
+      <label class="row">
+        <span class="label">自定义壁纸 URL（留空则使用预设）</span>
+        <input type="url" id="wallpaperUrl" placeholder="https://...">
+      </label>
+      <button type="button" id="clearWallpaperCache" class="btn">清除本地壁纸缓存（下次打开重新加载）</button>
+    </section>
+
+    <section>
+      <h2>镶边毛玻璃</h2>
+      <label class="row">
+        <input type="checkbox" id="showGlass" checked>
+        <span>显示顶部/底部毛玻璃镶边</span>
+      </label>
+      <label class="row">
+        <span class="label">镶边透明度</span>
+        <input type="range" id="glassOpacity" min="0" max="100" value="35">
+        <span id="glassOpacityValue">35%</span>
+      </label>
+    </section>
+
+    <div class="actions">
+      <button type="button" id="save" class="btn btn-primary">保存设置</button>
+      <span id="status" class="status"></span>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>
