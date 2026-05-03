@@ -2,7 +2,8 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -343,4 +344,322 @@ body {
   background: rgba(255, 255, 255, 0.35);
 }
 
+/* AI 助手页 */
+#view-ai {
+  justify-content: flex-start;
+  padding: 0 16px 24px;
+}
+
+.ai-panel {
+  width: min(1080px, 100%);
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.ai-config,
+.ai-workspace {
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(8, 10, 18, 0.5);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.ai-config {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  align-self: start;
+}
+
+.ai-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-config h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ai-config-status {
+  min-width: 44px;
+  font-size: 0.8rem;
+  color: #9ee6bd;
+  text-align: right;
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ai-field input,
+.ai-input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.32);
+  color: #fff;
+  outline: none;
+}
+
+.ai-field input {
+  height: 38px;
+  border-radius: 8px;
+  padding: 0 10px;
+}
+
+.ai-field input:focus,
+.ai-input:focus {
+  border-color: rgba(158, 230, 189, 0.58);
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.ai-save-btn,
+.ai-submit,
+.ai-mode-btn {
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.ai-save-btn {
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(158, 230, 189, 0.22);
+}
+
+.ai-save-btn:hover,
+.ai-submit:hover {
+  background: rgba(158, 230, 189, 0.34);
+}
+
+.ai-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.ai-mode-switch {
+  align-self: flex-start;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ai-mode-btn {
+  min-width: 82px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.88rem;
+}
+
+.ai-mode-btn.active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ai-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.ai-message {
+  max-width: min(760px, 92%);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ai-message-user {
+  align-self: flex-end;
+}
+
+.ai-message-assistant,
+.ai-message-error {
+  align-self: flex-start;
+}
+
+.ai-message-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.ai-message-user .ai-message-label {
+  text-align: right;
+}
+
+.ai-message-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ai-message-user .ai-message-body {
+  background: rgba(158, 230, 189, 0.22);
+}
+
+.ai-message-error .ai-message-body {
+  background: rgba(255, 106, 106, 0.18);
+  border-color: rgba(255, 106, 106, 0.28);
+}
+
+.ai-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ai-input {
+  resize: none;
+  min-height: 78px;
+  max-height: 150px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.ai-input::placeholder,
+.ai-field input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.ai-submit {
+  border-radius: 12px;
+  background: rgba(158, 230, 189, 0.24);
+  font-size: 0.95rem;
+}
+
+.ai-submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+@media (max-width: 780px) {
+  .ai-panel {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .ai-config {
+    align-self: stretch;
+  }
+
+  .ai-workspace {
+    min-height: 520px;
+  }
+}
+
+@media (max-width: 520px) {
+  .view-tab {
+    padding: 8px 12px;
+  }
+
+  .ai-form {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-submit {
+    height: 40px;
+  }
+}
+
 /* 收藏导航（仅收藏导航页使用） */
+.favorites-loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 3;
+}
+
+.favorites-loading-overlay[hidden] {
+  display: none;
+}
+
+.favorites-loading-dialog {
+  position: relative;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 16px 20px 18px;
+  border-radius: 16px;
+  background: rgba(15, 15, 30, 0.92);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #fff;
+}
+
+.favorites-loading-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.favorites-loading-text {
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.favorites-loading-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px 4px;
+}
+
+.favorites-loading-close:hover {
+  color: #fff;
+}
+
+.favorites-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: favorites-loading-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes favorites-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

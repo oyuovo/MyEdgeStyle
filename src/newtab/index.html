@@ -1,36 +1,90 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>新标签页</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <div id="wallpaper" class="wallpaper" aria-hidden="true"></div>
   <div id="glass-top" class="glass glass-top" aria-hidden="true"></div>
   <div id="glass-bottom" class="glass glass-bottom" aria-hidden="true"></div>
   <div id="app">
     <nav class="view-tabs" role="tablist">
-      <button type="button" class="view-tab active" role="tab" id="tab-home" aria-selected="true">首页</button>
-      <button type="button" class="view-tab" role="tab" id="tab-favorites" aria-selected="false">收藏导航</button>
+      <button type="button" class="view-tab active" role="tab" id="tab-home" data-view="home"
+        aria-controls="view-home" aria-selected="true">首页</button>
+      <button type="button" class="view-tab" role="tab" id="tab-favorites" data-view="favorites"
+        aria-controls="view-favorites" aria-selected="false">收藏导航</button>
+      <button type="button" class="view-tab" role="tab" id="tab-ai" data-view="ai" aria-controls="view-ai"
+        aria-selected="false">AI 助手</button>
     </nav>
     <div id="view-home" class="view-pane" role="tabpanel">
       <div id="widget-time" class="widget widget-time" hidden></div>
       <div id="widget-weather" class="widget widget-weather" hidden></div>
       <form id="search-form" class="search-form">
-        <input type="search" id="search-input" class="search-input" placeholder="在 Bing 上搜索..." autocomplete="off" enterkeyhint="search">
+        <input type="search" id="search-input" class="search-input" placeholder="在 Bing 上搜索..." autocomplete="off"
+          enterkeyhint="search">
         <button type="submit" class="search-btn">搜索</button>
       </form>
       <div class="placeholder" id="placeholder">MyEdgeStyle 新标签页</div>
     </div>
     <div id="view-favorites" class="view-pane hidden" role="tabpanel">
       <div class="favorites-nav">
-        <input type="search" id="favorites-nav-search" class="favorites-nav-search" placeholder="搜索收藏（标题或网址）..." autocomplete="off">
+        <input type="search" id="favorites-nav-search" class="favorites-nav-search" placeholder="搜索收藏（标题或网址）..."
+          autocomplete="off">
         <div id="favorites-nav-content" class="favorites-nav-content"></div>
+      </div>
+    </div>
+    <div id="view-ai" class="view-pane hidden" role="tabpanel">
+      <section class="ai-panel" aria-label="AI 助手">
+        <aside class="ai-config">
+          <div class="ai-config-header">
+            <h2>AI 配置</h2>
+            <span id="ai-config-status" class="ai-config-status" aria-live="polite"></span>
+          </div>
+          <label class="ai-field">
+            <span>API 地址</span>
+            <input type="url" id="ai-api-url" placeholder="https://api.openai.com/v1/chat/completions"
+              autocomplete="off">
+          </label>
+          <label class="ai-field">
+            <span>API Key</span>
+            <input type="password" id="ai-api-key" placeholder="输入后加密保存，不回显" autocomplete="new-password"
+              spellcheck="false">
+          </label>
+          <label class="ai-field">
+            <span>模型</span>
+            <input type="text" id="ai-model" placeholder="例如 gpt-4.1-mini / deepseek-chat" autocomplete="off">
+          </label>
+          <button type="button" id="ai-save-config" class="ai-save-btn">保存配置</button>
+        </aside>
+        <main class="ai-workspace">
+          <div class="ai-mode-switch" role="tablist" aria-label="AI 模式">
+            <button type="button" class="ai-mode-btn active" data-ai-mode="chat" aria-selected="true">问答</button>
+            <button type="button" class="ai-mode-btn" data-ai-mode="naming" aria-selected="false">命名简称</button>
+          </div>
+          <div id="ai-messages" class="ai-messages" aria-live="polite"></div>
+          <form id="ai-form" class="ai-form">
+            <textarea id="ai-input" class="ai-input" rows="3" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+            <button type="submit" id="ai-submit" class="ai-submit">发送</button>
+          </form>
+        </main>
+      </section>
+    </div>
+    <div id="favorites-loading-overlay" class="favorites-loading-overlay" aria-hidden="true" hidden>
+      <div class="favorites-loading-dialog" role="status" aria-live="polite">
+        <button type="button" class="favorites-loading-close" aria-label="取消加载">×</button>
+        <div class="favorites-loading-body">
+          <div class="favorites-loading-spinner"></div>
+          <div class="favorites-loading-text">正在加载收藏...</div>
+        </div>
       </div>
     </div>
   </div>
   <script src="script.js"></script>
 </body>
+
 </html>

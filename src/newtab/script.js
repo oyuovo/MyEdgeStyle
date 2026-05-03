@@ -13,8 +13,16 @@ const DEFAULT_CONFIG = {
   glassOpacity: 0.35,
   showGlass: true,
   showPlaceholder: true,
-  searchEngine: 'bing'
+  searchEngine: 'bing',
+  aiApiUrl: 'https://api.openai.com/v1/chat/completions',
+  aiApiKeyCipher: '',
+  aiApiKeyIv: '',
+  aiModel: ''
 };
+
+const AI_SECRET_DB = 'myedgestyle-secrets';
+const AI_SECRET_STORE = 'secrets';
+const AI_SECRET_KEY_ID = 'ai-api-key';
 
 const SEARCH_ENGINES = {
   bing: { url: 'https://www.bing.com/search?q=', placeholder: '在 Bing 上搜索...' },
@@ -63,7 +71,7 @@ function maybeRedirect() {
   if (config.useDefaultNewTab) {
     try {
       window.location.href = 'edge://newtab';
-    } catch (_) {}
+    } catch (_) { }
   }
 }
 
@@ -192,7 +200,8 @@ function ensureWallpaperCache() {
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     const newtab = { ...config };
     delete newtab.useDefaultNewTab;
-    chrome.storage.local.set({ newtab }, () => {});
+    delete newtab.aiApiKey;
+    chrome.storage.local.set({ newtab }, () => { });
   }
 }
 
@@ -200,7 +209,10 @@ function saveNewtabConfig(updates) {
   Object.assign(config, updates);
   const newtab = { ...config };
   delete newtab.useDefaultNewTab;
-  chrome.storage?.local?.set({ newtab }, () => {});
+  delete newtab.aiApiKey;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.set({ newtab }, () => { });
+  }
 }
 
 function applyGlass() {
@@ -256,7 +268,7 @@ function flattenNodeToItems(node, pathPrefix = '', rootTitle = '') {
 
 function getBookmarksGroupedByRoot() {
   return new Promise((resolve) => {
-    if (!chrome?.bookmarks?.getTree) {
+    if (typeof chrome === 'undefined' || !chrome.bookmarks?.getTree) {
       resolve([]);
       return;
     }
@@ -433,47 +445,501 @@ function renderFavoritesNav(groups, query) {
   }
 }
 
-let favoritesData = null;
+const VIEW_ORDER = ['home', 'favorites', 'ai'];
+let currentViewId = 'home';
+let aiMode = 'chat';
+let aiChatHistory = [];
 
-function ensureFavoritesData() {
-  return favoritesData
-    ? Promise.resolve(favoritesData)
-    : getBookmarksGroupedByRoot().then((groups) => {
-        favoritesData = groups;
-        return groups;
+function isFormTarget(target) {
+  const tag = target?.tagName?.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+}
+
+function setAiConfigStatus(text) {
+  const status = document.getElementById('ai-config-status');
+  if (!status) return;
+  status.textContent = text || '';
+  if (text) {
+    setTimeout(() => {
+      if (status.textContent === text) status.textContent = '';
+    }, 1800);
+  }
+}
+
+function hasAiApiKeyStored() {
+  return !!(config.aiApiKeyCipher && config.aiApiKeyIv);
+}
+
+function hasCryptoStorageSupport() {
+  return !!(window.crypto?.subtle && window.indexedDB);
+}
+
+function openAiSecretDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error('当前浏览器不支持 IndexedDB，无法安全保存 API Key。'));
+      return;
+    }
+    const request = indexedDB.open(AI_SECRET_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(AI_SECRET_STORE)) {
+        db.createObjectStore(AI_SECRET_STORE, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('无法打开本地密钥库。'));
+  });
+}
+
+function readSecretRecord(db, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AI_SECRET_STORE, 'readonly');
+    const request = tx.objectStore(AI_SECRET_STORE).get(id);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error || new Error('无法读取本地密钥。'));
+  });
+}
+
+function writeSecretRecord(db, record) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AI_SECRET_STORE, 'readwrite');
+    tx.objectStore(AI_SECRET_STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('无法写入本地密钥。'));
+  });
+}
+
+async function getAiCryptoKey() {
+  if (!hasCryptoStorageSupport()) {
+    throw new Error('当前浏览器不支持 WebCrypto/IndexedDB，无法加密保存 API Key。');
+  }
+  const db = await openAiSecretDb();
+  try {
+    const record = await readSecretRecord(db, AI_SECRET_KEY_ID);
+    if (record?.key) return record.key;
+    const key = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+    await writeSecretRecord(db, { id: AI_SECRET_KEY_ID, key });
+    return key;
+  } finally {
+    db.close();
+  }
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function encryptAiApiKey(apiKey) {
+  const key = await getAiCryptoKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(apiKey);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+  return {
+    aiApiKeyCipher: bytesToBase64(new Uint8Array(cipher)),
+    aiApiKeyIv: bytesToBase64(iv)
+  };
+}
+
+async function decryptAiApiKey() {
+  if (!hasAiApiKeyStored()) return '';
+  try {
+    const key = await getAiCryptoKey();
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: base64ToBytes(config.aiApiKeyIv) },
+      key,
+      base64ToBytes(config.aiApiKeyCipher)
+    );
+    return new TextDecoder().decode(plain);
+  } catch (_) {
+    throw new Error('API Key 无法解密，请重新设置。');
+  }
+}
+
+async function migratePlainAiApiKey() {
+  const legacyKey = (config.aiApiKey || '').trim();
+  if (legacyKey) {
+    try {
+      const encrypted = await encryptAiApiKey(legacyKey);
+      saveNewtabConfig({
+        ...encrypted,
+        aiApiKey: ''
       });
+    } catch (err) {
+      saveNewtabConfig({ aiApiKey: '' });
+      throw err;
+    }
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.remove('aiApiKey', () => { });
+  }
+}
+
+function loadAiConfigFields() {
+  const apiUrl = document.getElementById('ai-api-url');
+  const apiKey = document.getElementById('ai-api-key');
+  const model = document.getElementById('ai-model');
+  if (apiUrl) apiUrl.value = config.aiApiUrl || DEFAULT_CONFIG.aiApiUrl;
+  if (apiKey) {
+    apiKey.value = '';
+    apiKey.placeholder = hasAiApiKeyStored() ? '已安全保存，重新输入可覆盖' : '输入后加密保存，不回显';
+  }
+  if (model) model.value = config.aiModel || '';
+}
+
+async function saveAiConfigFromFields({ requireKey = false } = {}) {
+  const apiUrl = document.getElementById('ai-api-url');
+  const apiKey = document.getElementById('ai-api-key');
+  const model = document.getElementById('ai-model');
+  const keyValue = (apiKey?.value || '').trim();
+  if (requireKey && !keyValue && !hasAiApiKeyStored()) {
+    throw new Error('请先设置 API Key。');
+  }
+  const updates = {
+    aiApiUrl: (apiUrl?.value || '').trim() || DEFAULT_CONFIG.aiApiUrl,
+    aiModel: (model?.value || '').trim()
+  };
+  if (keyValue) {
+    Object.assign(updates, await encryptAiApiKey(keyValue));
+  }
+  saveNewtabConfig(updates);
+  if (apiKey) {
+    apiKey.value = '';
+    apiKey.placeholder = hasAiApiKeyStored() ? '已安全保存，重新输入可覆盖' : '输入后加密保存，不回显';
+  }
+  setAiConfigStatus('已保存');
+}
+
+function getAiRuntimeConfig() {
+  const apiUrl = (document.getElementById('ai-api-url')?.value || config.aiApiUrl || '').trim();
+  const model = (document.getElementById('ai-model')?.value || config.aiModel || '').trim();
+  return { apiUrl, model };
+}
+
+function appendAiMessage(role, text) {
+  const messages = document.getElementById('ai-messages');
+  if (!messages) return null;
+  const item = document.createElement('article');
+  item.className = `ai-message ai-message-${role}`;
+  const label = document.createElement('div');
+  label.className = 'ai-message-label';
+  label.textContent = role === 'user' ? '你' : (role === 'error' ? '错误' : 'AI');
+  const body = document.createElement('div');
+  body.className = 'ai-message-body';
+  body.textContent = text;
+  item.appendChild(label);
+  item.appendChild(body);
+  messages.appendChild(item);
+  messages.scrollTop = messages.scrollHeight;
+  return body;
+}
+
+function renderAiWelcome() {
+  const messages = document.getElementById('ai-messages');
+  if (!messages || messages.children.length) return;
+  appendAiMessage('assistant', '配置 API 地址、Key 和模型后，可以在这里直接问答；切到“命名简称”后，输入中文名词即可生成英文缩写和常用代码命名。');
+}
+
+function setAiMode(nextMode) {
+  aiMode = nextMode === 'naming' ? 'naming' : 'chat';
+  document.querySelectorAll('.ai-mode-btn').forEach((btn) => {
+    const active = btn.dataset.aiMode === aiMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+  const input = document.getElementById('ai-input');
+  const submit = document.getElementById('ai-submit');
+  if (input) {
+    input.placeholder = aiMode === 'naming'
+      ? '输入中文名词，例如：用户权限分组'
+      : '输入问题，Enter 发送，Shift+Enter 换行';
+  }
+  if (submit) submit.textContent = aiMode === 'naming' ? '生成' : '发送';
+}
+
+function getAiSystemPrompt() {
+  if (aiMode === 'naming') {
+    return [
+      '你是面向软件开发团队的中英命名助手。',
+      '用户会输入中文业务名词或技术名词。',
+      '请输出简洁、规范、可直接用于代码的英文命名建议。',
+      '固定包含：英文全称、推荐简称、camelCase、PascalCase、snake_case、适用说明。',
+      '优先使用开发者常见缩写，避免生僻词。'
+    ].join('\n');
+  }
+  return '你是一个简洁可靠的中文 AI 助手，回答要准确、清楚，必要时给出可执行步骤。';
+}
+
+function normalizeAiContent(data) {
+  const choice = data?.choices?.[0];
+  const content = choice?.message?.content ?? choice?.text ?? data?.output_text;
+  if (Array.isArray(content)) {
+    return content.map((part) => part.text || part.content || '').join('').trim();
+  }
+  return String(content || '').trim();
+}
+
+async function requestAiAnswer(userText) {
+  const { apiUrl, model } = getAiRuntimeConfig();
+  if (!apiUrl) throw new Error('请先配置 API 地址。');
+  if (!model) throw new Error('请先配置模型名称。');
+  const apiKey = await decryptAiApiKey();
+  if (!apiKey) throw new Error('请先设置 API Key。');
+  const messages = [
+    { role: 'system', content: getAiSystemPrompt() }
+  ];
+  if (aiMode === 'chat' && aiChatHistory.length) {
+    messages.push(...aiChatHistory.slice(-10));
+  }
+  messages.push({ role: 'user', content: userText });
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: aiMode === 'naming' ? 0.2 : 0.7
+    })
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`接口请求失败：${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 300)}` : ''}`);
+  }
+  const data = await response.json();
+  const answer = normalizeAiContent(data);
+  if (!answer) throw new Error('接口返回为空，请检查模型或接口格式是否兼容。');
+  return answer;
+}
+
+function initAiAssistant() {
+  const form = document.getElementById('ai-form');
+  const input = document.getElementById('ai-input');
+  const submit = document.getElementById('ai-submit');
+  const saveBtn = document.getElementById('ai-save-config');
+
+  loadAiConfigFields();
+  renderAiWelcome();
+  setAiMode('chat');
+
+  document.querySelectorAll('.ai-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setAiMode(btn.dataset.aiMode));
+  });
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      saveAiConfigFromFields().catch((err) => {
+        setAiConfigStatus(err?.message || '保存失败');
+      });
+    });
+  }
+
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        form?.requestSubmit();
+      }
+    });
+  }
+
+  if (form && input && submit) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text || submit.disabled) return;
+      submit.disabled = true;
+      submit.textContent = '请求中';
+      try {
+        await saveAiConfigFromFields({ requireKey: true });
+        appendAiMessage('user', text);
+        input.value = '';
+        const pending = appendAiMessage('assistant', '思考中...');
+        const answer = await requestAiAnswer(text);
+        if (pending) pending.textContent = answer;
+        if (aiMode === 'chat') {
+          aiChatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: answer });
+          aiChatHistory = aiChatHistory.slice(-20);
+        }
+      } catch (err) {
+        appendAiMessage('error', err?.message || '未知错误');
+      } finally {
+        submit.disabled = false;
+        submit.textContent = aiMode === 'naming' ? '生成' : '发送';
+      }
+    });
+  }
+}
+
+let favoritesData = null;
+let currentFavoritesLoadId = 0;
+let isFavoritesLoading = false;
+
+function getFavoritesLoadingElements() {
+  const overlay = document.getElementById('favorites-loading-overlay');
+  const closeBtn = overlay ? overlay.querySelector('.favorites-loading-close') : null;
+  return { overlay, closeBtn };
+}
+
+function showFavoritesLoading() {
+  const { overlay } = getFavoritesLoadingElements();
+  currentFavoritesLoadId += 1;
+  const loadId = currentFavoritesLoadId;
+  isFavoritesLoading = true;
+  if (overlay) {
+    overlay.hidden = false;
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+  return loadId;
+}
+
+function hideFavoritesLoading() {
+  const { overlay } = getFavoritesLoadingElements();
+  isFavoritesLoading = false;
+  if (overlay) {
+    overlay.hidden = true;
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function cancelFavoritesLoading() {
+  if (!isFavoritesLoading) return;
+  currentFavoritesLoadId += 1;
+  hideFavoritesLoading();
+}
+
+function ensureFavoritesData(loadId) {
+  if (favoritesData) {
+    return Promise.resolve(favoritesData);
+  }
+  const effectiveLoadId = loadId ?? currentFavoritesLoadId;
+  return getBookmarksGroupedByRoot().then((groups) => {
+    if (effectiveLoadId !== currentFavoritesLoadId) {
+      return null;
+    }
+    favoritesData = groups;
+    return groups;
+  }).catch(() => {
+    if (effectiveLoadId === currentFavoritesLoadId) {
+      hideFavoritesLoading();
+      const content = document.getElementById('favorites-nav-content');
+      if (content) content.textContent = '无法加载收藏，请稍后重试。';
+    }
+    return null;
+  });
 }
 
 function initFavorites() {
   const navSearch = document.getElementById('favorites-nav-search');
   const tabHome = document.getElementById('tab-home');
   const tabFavorites = document.getElementById('tab-favorites');
+  const tabAi = document.getElementById('tab-ai');
   const viewHome = document.getElementById('view-home');
   const viewFavorites = document.getElementById('view-favorites');
+  const viewAi = document.getElementById('view-ai');
+  const { closeBtn } = getFavoritesLoadingElements();
 
   function applyFilterNav() {
     const q = navSearch ? navSearch.value : '';
     if (favoritesData) renderFavoritesNav(favoritesData, q);
   }
 
-  if (tabHome && tabFavorites && viewHome && viewFavorites) {
+  function setActiveView(viewId) {
+    currentViewId = VIEW_ORDER.includes(viewId) ? viewId : 'home';
+    const entries = [
+      { id: 'home', tab: tabHome, view: viewHome },
+      { id: 'favorites', tab: tabFavorites, view: viewFavorites },
+      { id: 'ai', tab: tabAi, view: viewAi }
+    ];
+    entries.forEach((entry) => {
+      const active = entry.id === currentViewId;
+      entry.tab?.classList.toggle('active', active);
+      entry.tab?.setAttribute('aria-selected', String(active));
+      entry.view?.classList.toggle('hidden', !active);
+    });
+    if (currentViewId !== 'favorites') {
+      cancelFavoritesLoading();
+      return;
+    }
+    const loadId = showFavoritesLoading();
+    ensureFavoritesData(loadId).then((groups) => {
+      if (!groups || loadId !== currentFavoritesLoadId) {
+        return;
+      }
+      renderFavoritesNav(groups, navSearch ? navSearch.value : '');
+      hideFavoritesLoading();
+    });
+  }
+
+  if (tabHome && tabFavorites && tabAi && viewHome && viewFavorites && viewAi) {
+    tabHome.addEventListener('click', () => setActiveView('home'));
+    tabFavorites.addEventListener('click', () => setActiveView('favorites'));
+    tabAi.addEventListener('click', () => setActiveView('ai'));
+
+    document.addEventListener('keydown', (e) => {
+      if (isFormTarget(e.target) || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+      const index = VIEW_ORDER.indexOf(currentViewId);
+      const delta = e.key === 'ArrowRight' ? 1 : -1;
+      const next = VIEW_ORDER[(index + delta + VIEW_ORDER.length) % VIEW_ORDER.length];
+      setActiveView(next);
+    });
+
+    let touchStartX = 0;
+    document.getElementById('app')?.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches?.[0]?.clientX || 0;
+    }, { passive: true });
+    document.getElementById('app')?.addEventListener('touchend', (e) => {
+      if (!touchStartX || isFormTarget(e.target)) return;
+      const endX = e.changedTouches?.[0]?.clientX || 0;
+      const distance = endX - touchStartX;
+      if (Math.abs(distance) < 60) return;
+      const index = VIEW_ORDER.indexOf(currentViewId);
+      const delta = distance < 0 ? 1 : -1;
+      const next = VIEW_ORDER[(index + delta + VIEW_ORDER.length) % VIEW_ORDER.length];
+      setActiveView(next);
+      touchStartX = 0;
+    }, { passive: true });
+  }
+
+  if (tabHome && tabFavorites && !tabAi && viewHome && viewFavorites) {
     tabHome.addEventListener('click', () => {
-      tabHome.classList.add('active');
-      tabHome.setAttribute('aria-selected', 'true');
-      tabFavorites.classList.remove('active');
-      tabFavorites.setAttribute('aria-selected', 'false');
-      viewHome.classList.remove('hidden');
-      viewFavorites.classList.add('hidden');
+      setActiveView('home');
     });
     tabFavorites.addEventListener('click', () => {
+      currentViewId = 'favorites';
       tabFavorites.classList.add('active');
       tabFavorites.setAttribute('aria-selected', 'true');
       tabHome.classList.remove('active');
       tabHome.setAttribute('aria-selected', 'false');
       viewHome.classList.add('hidden');
       viewFavorites.classList.remove('hidden');
-      ensureFavoritesData().then((groups) => {
+      const loadId = showFavoritesLoading();
+      ensureFavoritesData(loadId).then((groups) => {
+        if (!groups || loadId !== currentFavoritesLoadId) {
+          return;
+        }
         renderFavoritesNav(groups, navSearch ? navSearch.value : '');
+        hideFavoritesLoading();
       });
     });
   }
@@ -483,10 +949,19 @@ function initFavorites() {
       if (favoritesData) applyFilterNav();
     });
   }
+
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      cancelFavoritesLoading();
+    });
+  }
 }
 
 async function init() {
   await getStorage();
+  await migratePlainAiApiKey().catch(() => {
+    delete config.aiApiKey;
+  });
   maybeRedirect();
   ensureWallpaperCache();
   applyWallpaper();
@@ -495,6 +970,7 @@ async function init() {
   initSearch();
   await renderWeather();
   updatePlaceholder();
+  initAiAssistant();
   initFavorites();
 }
 
