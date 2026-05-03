@@ -448,7 +448,10 @@ function renderFavoritesNav(groups, query) {
 const VIEW_ORDER = ['home', 'favorites', 'ai'];
 let currentViewId = 'home';
 let aiMode = 'chat';
-let aiChatHistory = [];
+const aiConversations = {
+  chat: [],
+  naming: []
+};
 
 function isFormTarget(target) {
   const tag = target?.tagName?.toLowerCase();
@@ -633,9 +636,18 @@ function getAiRuntimeConfig() {
   return { apiUrl, model };
 }
 
-function appendAiMessage(role, text) {
-  const messages = document.getElementById('ai-messages');
-  if (!messages) return null;
+function getAiConversation(mode = aiMode) {
+  return aiConversations[mode === 'naming' ? 'naming' : 'chat'];
+}
+
+function getAiWelcomeText(mode = aiMode) {
+  if (mode === 'naming') {
+    return '这里是独立的命名简称对话。输入中文业务名词或技术名词后，会生成英文全称、简称和代码命名建议。';
+  }
+  return '这里是独立的问答对话。配置 API 地址、Key 和模型后，可以直接进行常规问答。';
+}
+
+function createAiMessageElement(role, text) {
   const item = document.createElement('article');
   item.className = `ai-message ai-message-${role}`;
   const label = document.createElement('div');
@@ -646,15 +658,42 @@ function appendAiMessage(role, text) {
   body.textContent = text;
   item.appendChild(label);
   item.appendChild(body);
+  return { item, body };
+}
+
+function appendAiMessageElement(role, text) {
+  const messages = document.getElementById('ai-messages');
+  if (!messages) return null;
+  const { item, body } = createAiMessageElement(role, text);
   messages.appendChild(item);
   messages.scrollTop = messages.scrollHeight;
   return body;
 }
 
-function renderAiWelcome() {
+function renderAiMessages() {
   const messages = document.getElementById('ai-messages');
-  if (!messages || messages.children.length) return;
-  appendAiMessage('assistant', '配置 API 地址、Key 和模型后，可以在这里直接问答；切到“命名简称”后，输入中文名词即可生成英文缩写和常用代码命名。');
+  if (!messages) return;
+  messages.innerHTML = '';
+  const conversation = getAiConversation();
+  if (!conversation.length) {
+    appendAiMessageElement('assistant', getAiWelcomeText());
+    return;
+  }
+  conversation.forEach((message) => {
+    appendAiMessageElement(message.role, message.text);
+  });
+}
+
+function addAiConversationMessage(role, text, mode = aiMode) {
+  const message = { role, text };
+  getAiConversation(mode).push(message);
+  const body = mode === aiMode ? appendAiMessageElement(role, text) : null;
+  return { message, body };
+}
+
+function clearCurrentAiConversation() {
+  getAiConversation().length = 0;
+  renderAiMessages();
 }
 
 function setAiMode(nextMode) {
@@ -672,10 +711,11 @@ function setAiMode(nextMode) {
       : '输入问题，Enter 发送，Shift+Enter 换行';
   }
   if (submit) submit.textContent = aiMode === 'naming' ? '生成' : '发送';
+  renderAiMessages();
 }
 
-function getAiSystemPrompt() {
-  if (aiMode === 'naming') {
+function getAiSystemPrompt(mode = aiMode) {
+  if (mode === 'naming') {
     return [
       '你是面向软件开发团队的中英命名助手。',
       '用户会输入中文业务名词或技术名词。',
@@ -696,17 +736,24 @@ function normalizeAiContent(data) {
   return String(content || '').trim();
 }
 
-async function requestAiAnswer(userText) {
+async function requestAiAnswer(userText, mode = aiMode) {
   const { apiUrl, model } = getAiRuntimeConfig();
   if (!apiUrl) throw new Error('请先配置 API 地址。');
   if (!model) throw new Error('请先配置模型名称。');
   const apiKey = await decryptAiApiKey();
   if (!apiKey) throw new Error('请先设置 API Key。');
   const messages = [
-    { role: 'system', content: getAiSystemPrompt() }
+    { role: 'system', content: getAiSystemPrompt(mode) }
   ];
-  if (aiMode === 'chat' && aiChatHistory.length) {
-    messages.push(...aiChatHistory.slice(-10));
+  if (mode === 'chat') {
+    let history = getAiConversation('chat')
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map((message) => ({ role: message.role, content: message.text }));
+    const last = history[history.length - 1];
+    if (last?.role === 'user' && last.content === userText) {
+      history = history.slice(0, -1);
+    }
+    messages.push(...history.slice(-10));
   }
   messages.push({ role: 'user', content: userText });
 
@@ -719,7 +766,7 @@ async function requestAiAnswer(userText) {
     body: JSON.stringify({
       model,
       messages,
-      temperature: aiMode === 'naming' ? 0.2 : 0.7
+      temperature: mode === 'naming' ? 0.2 : 0.7
     })
   });
   if (!response.ok) {
@@ -737,9 +784,9 @@ function initAiAssistant() {
   const input = document.getElementById('ai-input');
   const submit = document.getElementById('ai-submit');
   const saveBtn = document.getElementById('ai-save-config');
+  const clearBtn = document.getElementById('ai-clear-chat');
 
   loadAiConfigFields();
-  renderAiWelcome();
   setAiMode('chat');
 
   document.querySelectorAll('.ai-mode-btn').forEach((btn) => {
@@ -751,6 +798,12 @@ function initAiAssistant() {
       saveAiConfigFromFields().catch((err) => {
         setAiConfigStatus(err?.message || '保存失败');
       });
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      clearCurrentAiConversation();
     });
   }
 
@@ -768,21 +821,19 @@ function initAiAssistant() {
       e.preventDefault();
       const text = input.value.trim();
       if (!text || submit.disabled) return;
+      const requestMode = aiMode;
       submit.disabled = true;
       submit.textContent = '请求中';
       try {
         await saveAiConfigFromFields({ requireKey: true });
-        appendAiMessage('user', text);
+        addAiConversationMessage('user', text, requestMode);
         input.value = '';
-        const pending = appendAiMessage('assistant', '思考中...');
-        const answer = await requestAiAnswer(text);
-        if (pending) pending.textContent = answer;
-        if (aiMode === 'chat') {
-          aiChatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: answer });
-          aiChatHistory = aiChatHistory.slice(-20);
-        }
+        const pending = addAiConversationMessage('assistant', '思考中...', requestMode);
+        const answer = await requestAiAnswer(text, requestMode);
+        pending.message.text = answer;
+        if (pending.body) pending.body.textContent = answer;
       } catch (err) {
-        appendAiMessage('error', err?.message || '未知错误');
+        addAiConversationMessage('error', err?.message || '未知错误', requestMode);
       } finally {
         submit.disabled = false;
         submit.textContent = aiMode === 'naming' ? '生成' : '发送';

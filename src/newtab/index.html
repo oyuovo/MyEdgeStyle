@@ -62,9 +62,12 @@
           <button type="button" id="ai-save-config" class="ai-save-btn">保存配置</button>
         </aside>
         <main class="ai-workspace">
-          <div class="ai-mode-switch" role="tablist" aria-label="AI 模式">
-            <button type="button" class="ai-mode-btn active" data-ai-mode="chat" aria-selected="true">问答</button>
-            <button type="button" class="ai-mode-btn" data-ai-mode="naming" aria-selected="false">命名简称</button>
+          <div class="ai-toolbar">
+            <div class="ai-mode-switch" role="tablist" aria-label="AI 模式">
+              <button type="button" class="ai-mode-btn active" data-ai-mode="chat" aria-selected="true">问答</button>
+              <button type="button" class="ai-mode-btn" data-ai-mode="naming" aria-selected="false">命名简称</button>
+            </div>
+            <button type="button" id="ai-clear-chat" class="ai-clear-btn">清除记录</button>
           </div>
           <div id="ai-messages" class="ai-messages" aria-live="polite"></div>
           <form id="ai-form" class="ai-form">

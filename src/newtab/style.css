@@ -429,7 +429,8 @@ body {
 
 .ai-save-btn,
 .ai-submit,
-.ai-mode-btn {
+.ai-mode-btn,
+.ai-clear-btn {
   border: none;
   color: #fff;
   cursor: pointer;
@@ -455,8 +456,15 @@ body {
   border-radius: 12px;
 }
 
+.ai-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .ai-mode-switch {
-  align-self: flex-start;
   display: flex;
   gap: 4px;
   padding: 4px;
@@ -475,6 +483,19 @@ body {
 
 .ai-mode-btn.active {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.ai-clear-btn {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.09);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.ai-clear-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .ai-messages {
@@ -582,6 +603,19 @@ body {
 @media (max-width: 520px) {
   .view-tab {
     padding: 8px 12px;
+  }
+
+  .ai-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-mode-switch {
+    align-self: flex-start;
+  }
+
+  .ai-clear-btn {
+    align-self: flex-start;
   }
 
   .ai-form {
