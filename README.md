@@ -23,10 +23,9 @@ Edge 扩展：自定义新标签页（时间、天气、壁纸、毛玻璃镶边
 - 壁纸：自定义壁纸 URL、清除本地壁纸缓存。
 - 镶边毛玻璃：开关、透明度滑块。
 
-### 弹窗与后台
+### 弹窗
 
 - 点击扩展图标打开弹窗，提供「新标签页与扩展设置」入口。
-- 后台为 Service Worker，当前仅维持扩展运行。
 
 ---
 
@@ -60,8 +59,7 @@ MyEdgeStyle/
     │   ├── popup.html
     │   ├── popup.css
     │   └── popup.js
-    └── background/
-        └── service-worker.js
+    └── background/             # 预留后台目录，当前未在 manifest 中启用
 ```
 
 ---

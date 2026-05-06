@@ -15,9 +15,6 @@
   "chrome_url_overrides": {
     "newtab": "src/newtab/index.html"
   },
-  "background": {
-    "service_worker": "src/background/service-worker.js"
-  },
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_title": "MyEdgeStyle",

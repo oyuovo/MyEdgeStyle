@@ -42,12 +42,15 @@ const WEATHER_CITIES = {
   xian: { name: '西安', lat: 34.27, lon: 108.94, timezone: 'Asia/Shanghai' }
 };
 
+const WEATHER_CACHE_KEY = 'newtabWeatherCache';
+const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000;
+
 const WALLPAPER_PRESETS = [
-  'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1920',
-  'https://images.unsplash.com/photo-1557683316-973673baf926?w=1920',
-  'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1920',
-  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920',
-  'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920'
+  'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1600&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1557683316-973673baf926?w=1600&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1600&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1600&auto=format&fit=crop&q=80'
 ];
 
 let config = { ...DEFAULT_CONFIG };
@@ -70,9 +73,11 @@ function getStorage() {
 function maybeRedirect() {
   if (config.useDefaultNewTab) {
     try {
-      window.location.href = 'edge://newtab';
+      window.location.replace('edge://newtab');
+      return true;
     } catch (_) { }
   }
+  return false;
 }
 
 function formatTime(date, use24, tz) {
@@ -141,9 +146,51 @@ async function fetchWeather() {
   }
 }
 
+function readWeatherCache() {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      resolve(null);
+      return;
+    }
+    chrome.storage.local.get([WEATHER_CACHE_KEY], (data) => {
+      resolve(data[WEATHER_CACHE_KEY] || null);
+    });
+  });
+}
+
+function writeWeatherCache(result) {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local || !result?.current) return;
+  chrome.storage.local.set({
+    [WEATHER_CACHE_KEY]: {
+      cityId: config.weatherCityId || 'nanjing',
+      fetchedAt: Date.now(),
+      result
+    }
+  }, () => { });
+}
+
+function isUsableWeatherCache(cache) {
+  return cache?.cityId === (config.weatherCityId || 'nanjing') && cache?.result?.current;
+}
+
+function isFreshWeatherCache(cache) {
+  return isUsableWeatherCache(cache) && Date.now() - (cache.fetchedAt || 0) < WEATHER_CACHE_TTL_MS;
+}
+
 function weatherCodeToText(code) {
   const map = { 0: '晴', 1: '大部晴朗', 2: '少云', 3: '多云', 45: '雾', 48: '雾', 51: '毛毛雨', 61: '雨', 63: '雨', 80: '阵雨', 95: '雷暴' };
   return map[code] || '未知';
+}
+
+function renderWeatherResult(el, result) {
+  const { current, cityName } = result;
+  const temp = Math.round(current.temperature_2m);
+  const desc = weatherCodeToText(current.weather_code);
+  el.innerHTML = `
+    <span class="temp">${temp}°C</span>
+    <span class="desc">${desc}</span>
+    <span class="location">${cityName}</span>
+  `;
 }
 
 async function renderWeather() {
@@ -153,19 +200,20 @@ async function renderWeather() {
     return;
   }
   el.hidden = false;
+  const cache = await readWeatherCache();
+  if (isUsableWeatherCache(cache)) {
+    renderWeatherResult(el, cache.result);
+    if (isFreshWeatherCache(cache)) return;
+  }
   const result = await fetchWeather();
   if (!result || !result.current) {
-    el.innerHTML = '<span class="desc">天气获取失败</span>';
+    if (!isUsableWeatherCache(cache)) {
+      el.innerHTML = '<span class="desc">天气获取失败</span>';
+    }
     return;
   }
-  const { current, cityName } = result;
-  const temp = Math.round(current.temperature_2m);
-  const desc = weatherCodeToText(current.weather_code);
-  el.innerHTML = `
-    <span class="temp">${temp}°C</span>
-    <span class="desc">${desc}</span>
-    <span class="location">${cityName}</span>
-  `;
+  writeWeatherCache(result);
+  renderWeatherResult(el, result);
 }
 
 function getWallpaperUrl() {
@@ -237,6 +285,14 @@ function updatePlaceholder() {
   ph.classList.toggle('placeholder', true);
   if (hasWidget) ph.style.display = 'none';
   else ph.style.display = '';
+}
+
+function runWhenIdle(task) {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(task, { timeout: 1200 });
+    return;
+  }
+  setTimeout(task, 0);
 }
 
 const FAVORITES_GROUP_NAMES = {
@@ -842,6 +898,14 @@ function initAiAssistant() {
   }
 }
 
+let aiAssistantInitialized = false;
+
+function ensureAiAssistantInitialized() {
+  if (aiAssistantInitialized) return;
+  aiAssistantInitialized = true;
+  initAiAssistant();
+}
+
 let favoritesData = null;
 let currentFavoritesLoadId = 0;
 let isFavoritesLoading = false;
@@ -928,6 +992,9 @@ function initFavorites() {
       entry.tab?.setAttribute('aria-selected', String(active));
       entry.view?.classList.toggle('hidden', !active);
     });
+    if (currentViewId === 'ai') {
+      ensureAiAssistantInitialized();
+    }
     if (currentViewId !== 'favorites') {
       cancelFavoritesLoading();
       return;
@@ -1010,19 +1077,20 @@ function initFavorites() {
 
 async function init() {
   await getStorage();
-  await migratePlainAiApiKey().catch(() => {
-    delete config.aiApiKey;
-  });
-  maybeRedirect();
+  if (maybeRedirect()) return;
   ensureWallpaperCache();
   applyWallpaper();
   applyGlass();
   initTime();
   initSearch();
-  await renderWeather();
   updatePlaceholder();
-  initAiAssistant();
   initFavorites();
+  runWhenIdle(() => {
+    migratePlainAiApiKey().catch(() => {
+      delete config.aiApiKey;
+    });
+    renderWeather().catch(() => { });
+  });
 }
 
 init();
