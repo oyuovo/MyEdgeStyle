@@ -14,8 +14,17 @@ const DEFAULT = {
   wallpaperIndex: 0,
   wallpaperUrl: '',
   glassOpacity: 0.35,
-  showGlass: true
+  showGlass: true,
+  devPorts: []
 };
+
+const DEFAULT_DEV_PORTS = [
+  { name: 'Vite', url: 'http://localhost:5173', desc: '前端开发服务' },
+  { name: 'React', url: 'http://localhost:3000', desc: '常见前端服务' },
+  { name: 'API', url: 'http://localhost:8080', desc: '后端接口服务' },
+  { name: 'Storybook', url: 'http://localhost:6006', desc: '组件开发' },
+  { name: 'Docs', url: 'http://localhost:4321', desc: '本地文档站点' }
+];
 
 function $(id) {
   return document.getElementById(id);
@@ -36,8 +45,37 @@ function loadOptions() {
     const pct = Math.round((newtab.glassOpacity ?? 0.35) * 100);
     $('glassOpacity').value = pct;
     $('glassOpacityValue').textContent = pct + '%';
+    $('devPorts').value = formatDevPorts(newtab.devPorts);
     fillTimezoneSelect(newtab.timezone);
   });
+}
+
+function getDefaultDevPorts() {
+  return DEFAULT_DEV_PORTS.map((item) => ({ ...item }));
+}
+
+function formatDevPorts(devPorts) {
+  const ports = Array.isArray(devPorts) && devPorts.length ? devPorts : DEFAULT_DEV_PORTS;
+  return ports.map((item) => {
+    const parts = [item.name || '', item.url || '', item.desc || ''].map((value) => String(value).trim());
+    return parts.join(' | ');
+  }).join('\n');
+}
+
+function parseDevPorts(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('|').map((part) => part.trim());
+      const name = parts[0] || '';
+      const url = parts[1] || '';
+      const desc = parts.slice(2).join(' | ');
+      if (!name || !url) return null;
+      return { name, url, desc };
+    })
+    .filter(Boolean);
 }
 
 function fillTimezoneSelect(selected) {
@@ -70,7 +108,8 @@ function saveOptions() {
       timezone: $('timezone').value,
       wallpaperUrl: $('wallpaperUrl').value.trim(),
       showGlass: $('showGlass').checked,
-      glassOpacity: parseInt($('glassOpacity').value, 10) / 100
+      glassOpacity: parseInt($('glassOpacity').value, 10) / 100,
+      devPorts: parseDevPorts($('devPorts').value)
     };
     chrome.storage.local.set({
       useDefaultNewTab: newtab.useDefaultNewTab,
@@ -102,5 +141,8 @@ $('glassOpacity').addEventListener('input', () => {
 
 $('save').addEventListener('click', saveOptions);
 $('clearWallpaperCache').addEventListener('click', clearWallpaperCache);
+$('resetDevPorts').addEventListener('click', () => {
+  $('devPorts').value = formatDevPorts(getDefaultDevPorts());
+});
 
 loadOptions();

@@ -117,6 +117,106 @@ body {
   overflow: hidden;
 }
 
+#view-ports {
+  justify-content: flex-start;
+  padding: 0 16px 24px;
+}
+
+.dev-ports {
+  width: min(980px, 100%);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dev-ports-toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.dev-ports-search {
+  width: min(420px, 100%);
+  padding: 12px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 1rem;
+  outline: none;
+}
+
+.dev-ports-search::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dev-ports-refresh {
+  min-width: 72px;
+  border: none;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+}
+
+.dev-ports-refresh:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.dev-ports-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  align-content: start;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.dev-port-card {
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(8, 10, 18, 0.48);
+  color: #fff;
+  text-decoration: none;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: background 0.2s, transform 0.15s, border-color 0.2s;
+}
+
+.dev-port-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.dev-port-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.dev-port-url {
+  font-size: 0.82rem;
+  color: rgba(158, 230, 189, 0.95);
+  word-break: break-all;
+}
+
+.dev-port-desc {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.68);
+}
+
 .favorites-nav-search {
   width: 100%;
   max-width: 400px;
@@ -457,8 +557,9 @@ body {
 }
 
 .ai-toolbar {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   justify-content: space-between;
   gap: 10px;
   flex-shrink: 0;
@@ -466,6 +567,7 @@ body {
 
 .ai-mode-switch {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
@@ -620,6 +722,14 @@ body {
 
   .ai-form {
     grid-template-columns: 1fr;
+  }
+
+  .dev-ports-toolbar {
+    flex-direction: column;
+  }
+
+  .dev-ports-refresh {
+    height: 40px;
   }
 
   .ai-submit {

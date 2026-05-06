@@ -17,12 +17,109 @@ const DEFAULT_CONFIG = {
   aiApiUrl: 'https://api.openai.com/v1/chat/completions',
   aiApiKeyCipher: '',
   aiApiKeyIv: '',
-  aiModel: ''
+  aiModel: '',
+  devPorts: []
 };
 
 const AI_SECRET_DB = 'myedgestyle-secrets';
 const AI_SECRET_STORE = 'secrets';
 const AI_SECRET_KEY_ID = 'ai-api-key';
+const PENDING_AI_REQUEST_KEY = 'pendingAiRequest';
+
+const DEFAULT_DEV_PORTS = [
+  { name: 'Vite', url: 'http://localhost:5173', desc: '前端开发服务' },
+  { name: 'React', url: 'http://localhost:3000', desc: '常见前端服务' },
+  { name: 'API', url: 'http://localhost:8080', desc: '后端接口服务' },
+  { name: 'Storybook', url: 'http://localhost:6006', desc: '组件开发' },
+  { name: 'Docs', url: 'http://localhost:4321', desc: '本地文档站点' }
+];
+
+const AI_MODE_CONFIG = {
+  chat: {
+    label: '问答',
+    welcome: '这里是独立的问答对话。配置 API 地址、Key 和模型后，可以直接进行常规问答。',
+    placeholder: '输入问题，Enter 发送，Shift+Enter 换行',
+    submit: '发送',
+    temperature: 0.7,
+    systemPrompt: '你是一个简洁可靠的中文 AI 助手，回答要准确、清楚，必要时给出可执行步骤。'
+  },
+  naming: {
+    label: '命名简称',
+    welcome: '输入中文业务名词或技术名词后，会生成英文全称、简称和代码命名建议。',
+    placeholder: '输入中文名词，例如：用户权限分组',
+    submit: '生成',
+    temperature: 0.2,
+    systemPrompt: [
+      '你是面向软件开发团队的中英命名助手。',
+      '用户会输入中文业务名词或技术名词。',
+      '请输出简洁、规范、可直接用于代码的英文命名建议。',
+      '固定包含：英文全称、推荐简称、camelCase、PascalCase、snake_case、适用说明。',
+      '优先使用开发者常见缩写，避免生僻词。'
+    ].join('\n')
+  },
+  error: {
+    label: '报错解释',
+    welcome: '粘贴报错、堆栈或日志，我会说明可能原因、定位步骤和优先修复建议。',
+    placeholder: '粘贴错误信息、堆栈或日志...',
+    submit: '解释',
+    temperature: 0.2,
+    systemPrompt: [
+      '你是资深软件调试助手。',
+      '用户会提供错误日志、堆栈、异常信息或运行现象。',
+      '请用中文输出：问题含义、最可能原因、排查步骤、建议修复、需要补充的信息。',
+      '如果信息不足，明确说明假设，不要编造不存在的上下文。'
+    ].join('\n')
+  },
+  commit: {
+    label: 'Commit',
+    welcome: '粘贴改动摘要或 diff，我会生成清晰的 Git commit message。',
+    placeholder: '粘贴变更摘要或 diff...',
+    submit: '生成',
+    temperature: 0.25,
+    systemPrompt: [
+      '你是代码仓库提交信息助手。',
+      '请根据用户提供的变更生成简洁、准确的 Git commit message。',
+      '优先输出 Conventional Commits 风格：type(scope): summary。',
+      '如有必要，再给 2-4 条正文要点。不要夸张，不要虚构未提到的改动。'
+    ].join('\n')
+  },
+  regex: {
+    label: 'Regex',
+    welcome: '描述要匹配或替换的文本规则，我会给出正则、示例和注意事项。',
+    placeholder: '描述正则需求，或粘贴样例文本...',
+    submit: '生成',
+    temperature: 0.2,
+    systemPrompt: [
+      '你是正则表达式助手。',
+      '请根据用户需求输出可用的正则表达式、适用语言或引擎、示例匹配、边界条件。',
+      '如果需要替换，也给出 replacement。优先解释清楚转义差异。'
+    ].join('\n')
+  },
+  sql: {
+    label: 'SQL',
+    welcome: '粘贴 SQL 或描述查询需求，我会解释、优化或生成查询。',
+    placeholder: '粘贴 SQL，或描述查询/优化需求...',
+    submit: '分析',
+    temperature: 0.25,
+    systemPrompt: [
+      '你是数据库与 SQL 助手。',
+      '请根据用户输入解释 SQL、发现风险、给出优化建议或生成查询。',
+      '输出时说明适用数据库方言假设，关注索引、过滤条件、JOIN、分页和数据安全。'
+    ].join('\n')
+  },
+  api: {
+    label: 'API 分析',
+    welcome: '粘贴接口响应、请求体或类型结构，我会总结字段、风险和前端使用建议。',
+    placeholder: '粘贴 JSON、接口响应、请求体或类型定义...',
+    submit: '分析',
+    temperature: 0.25,
+    systemPrompt: [
+      '你是 API 结构分析助手。',
+      '请根据用户提供的 JSON、响应体、请求体或类型定义，输出字段含义推断、数据结构摘要、前端渲染/校验建议、潜在风险。',
+      '不要泄露或复述敏感 token；如果看到疑似密钥，只提醒用户处理。'
+    ].join('\n')
+  }
+};
 
 const SEARCH_ENGINES = {
   bing: { url: 'https://www.bing.com/search?q=', placeholder: '在 Bing 上搜索...' },
@@ -501,13 +598,85 @@ function renderFavoritesNav(groups, query) {
   }
 }
 
-const VIEW_ORDER = ['home', 'favorites', 'ai'];
+function getDevPorts() {
+  const ports = Array.isArray(config.devPorts) && config.devPorts.length ? config.devPorts : DEFAULT_DEV_PORTS;
+  return ports
+    .map((item) => {
+      const name = String(item.name || '').trim();
+      const url = String(item.url || '').trim();
+      const desc = String(item.desc || '').trim();
+      if (!name || !url) return null;
+      return { name, url, desc };
+    })
+    .filter(Boolean);
+}
+
+function matchDevPort(item, query) {
+  if (!query || !query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  return [item.name, item.url, item.desc].some((value) => String(value || '').toLowerCase().includes(q));
+}
+
+function createDevPortCard(item) {
+  const a = document.createElement('a');
+  a.className = 'dev-port-card';
+  a.href = item.url;
+  a.title = item.url;
+  const title = document.createElement('span');
+  title.className = 'dev-port-title';
+  title.textContent = item.name;
+  const url = document.createElement('span');
+  url.className = 'dev-port-url';
+  url.textContent = item.url.replace(/^https?:\/\//, '');
+  const desc = document.createElement('span');
+  desc.className = 'dev-port-desc';
+  desc.textContent = item.desc || '本地开发服务';
+  a.appendChild(title);
+  a.appendChild(url);
+  a.appendChild(desc);
+  return a;
+}
+
+function renderDevPorts() {
+  const content = document.getElementById('dev-ports-content');
+  const search = document.getElementById('dev-ports-search');
+  if (!content) return;
+  const q = search ? search.value : '';
+  const items = getDevPorts().filter((item) => matchDevPort(item, q));
+  content.innerHTML = '';
+  if (!items.length) {
+    content.textContent = q ? '无匹配端口' : '暂无本地端口配置';
+    return;
+  }
+  for (const item of items) {
+    content.appendChild(createDevPortCard(item));
+  }
+}
+
+function initDevPorts() {
+  const search = document.getElementById('dev-ports-search');
+  const refresh = document.getElementById('dev-ports-refresh');
+  if (search) {
+    search.addEventListener('input', renderDevPorts);
+  }
+  if (refresh) {
+    refresh.addEventListener('click', renderDevPorts);
+  }
+  renderDevPorts();
+}
+
+const VIEW_ORDER = ['home', 'favorites', 'ports', 'ai'];
 let currentViewId = 'home';
 let aiMode = 'chat';
-const aiConversations = {
-  chat: [],
-  naming: []
-};
+const aiConversations = {};
+for (const mode of Object.keys(AI_MODE_CONFIG)) {
+  aiConversations[mode] = [];
+}
+let setActiveViewHandler = null;
+
+function getKnownAiMode(mode) {
+  return AI_MODE_CONFIG[mode] ? mode : 'chat';
+}
 
 function isFormTarget(target) {
   const tag = target?.tagName?.toLowerCase();
@@ -693,14 +862,13 @@ function getAiRuntimeConfig() {
 }
 
 function getAiConversation(mode = aiMode) {
-  return aiConversations[mode === 'naming' ? 'naming' : 'chat'];
+  const knownMode = getKnownAiMode(mode);
+  if (!aiConversations[knownMode]) aiConversations[knownMode] = [];
+  return aiConversations[knownMode];
 }
 
 function getAiWelcomeText(mode = aiMode) {
-  if (mode === 'naming') {
-    return '这里是独立的命名简称对话。输入中文业务名词或技术名词后，会生成英文全称、简称和代码命名建议。';
-  }
-  return '这里是独立的问答对话。配置 API 地址、Key 和模型后，可以直接进行常规问答。';
+  return AI_MODE_CONFIG[getKnownAiMode(mode)].welcome;
 }
 
 function createAiMessageElement(role, text) {
@@ -753,7 +921,7 @@ function clearCurrentAiConversation() {
 }
 
 function setAiMode(nextMode) {
-  aiMode = nextMode === 'naming' ? 'naming' : 'chat';
+  aiMode = getKnownAiMode(nextMode);
   document.querySelectorAll('.ai-mode-btn').forEach((btn) => {
     const active = btn.dataset.aiMode === aiMode;
     btn.classList.toggle('active', active);
@@ -761,26 +929,16 @@ function setAiMode(nextMode) {
   });
   const input = document.getElementById('ai-input');
   const submit = document.getElementById('ai-submit');
+  const modeConfig = AI_MODE_CONFIG[aiMode];
   if (input) {
-    input.placeholder = aiMode === 'naming'
-      ? '输入中文名词，例如：用户权限分组'
-      : '输入问题，Enter 发送，Shift+Enter 换行';
+    input.placeholder = modeConfig.placeholder;
   }
-  if (submit) submit.textContent = aiMode === 'naming' ? '生成' : '发送';
+  if (submit) submit.textContent = modeConfig.submit;
   renderAiMessages();
 }
 
 function getAiSystemPrompt(mode = aiMode) {
-  if (mode === 'naming') {
-    return [
-      '你是面向软件开发团队的中英命名助手。',
-      '用户会输入中文业务名词或技术名词。',
-      '请输出简洁、规范、可直接用于代码的英文命名建议。',
-      '固定包含：英文全称、推荐简称、camelCase、PascalCase、snake_case、适用说明。',
-      '优先使用开发者常见缩写，避免生僻词。'
-    ].join('\n');
-  }
-  return '你是一个简洁可靠的中文 AI 助手，回答要准确、清楚，必要时给出可执行步骤。';
+  return AI_MODE_CONFIG[getKnownAiMode(mode)].systemPrompt;
 }
 
 function normalizeAiContent(data) {
@@ -793,15 +951,16 @@ function normalizeAiContent(data) {
 }
 
 async function requestAiAnswer(userText, mode = aiMode) {
+  const requestMode = getKnownAiMode(mode);
   const { apiUrl, model } = getAiRuntimeConfig();
   if (!apiUrl) throw new Error('请先配置 API 地址。');
   if (!model) throw new Error('请先配置模型名称。');
   const apiKey = await decryptAiApiKey();
   if (!apiKey) throw new Error('请先设置 API Key。');
   const messages = [
-    { role: 'system', content: getAiSystemPrompt(mode) }
+    { role: 'system', content: getAiSystemPrompt(requestMode) }
   ];
-  if (mode === 'chat') {
+  if (requestMode === 'chat') {
     let history = getAiConversation('chat')
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .map((message) => ({ role: message.role, content: message.text }));
@@ -822,7 +981,7 @@ async function requestAiAnswer(userText, mode = aiMode) {
     body: JSON.stringify({
       model,
       messages,
-      temperature: mode === 'naming' ? 0.2 : 0.7
+      temperature: AI_MODE_CONFIG[requestMode].temperature
     })
   });
   if (!response.ok) {
@@ -892,7 +1051,7 @@ function initAiAssistant() {
         addAiConversationMessage('error', err?.message || '未知错误', requestMode);
       } finally {
         submit.disabled = false;
-        submit.textContent = aiMode === 'naming' ? '生成' : '发送';
+        submit.textContent = AI_MODE_CONFIG[aiMode].submit;
       }
     });
   }
@@ -904,6 +1063,52 @@ function ensureAiAssistantInitialized() {
   if (aiAssistantInitialized) return;
   aiAssistantInitialized = true;
   initAiAssistant();
+}
+
+function openView(viewId) {
+  if (setActiveViewHandler) {
+    setActiveViewHandler(viewId);
+  }
+}
+
+function readPendingAiRequest() {
+  return new Promise((resolve) => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      resolve(null);
+      return;
+    }
+    chrome.storage.local.get([PENDING_AI_REQUEST_KEY], (data) => {
+      resolve(data[PENDING_AI_REQUEST_KEY] || null);
+    });
+  });
+}
+
+function clearPendingAiRequest() {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.remove(PENDING_AI_REQUEST_KEY, () => { });
+  }
+}
+
+async function handleLaunchParams() {
+  const params = new URLSearchParams(window.location.search);
+  const requestedView = params.get('view');
+  const requestedMode = params.get('aiMode');
+  if (requestedView === 'ai') {
+    openView('ai');
+    ensureAiAssistantInitialized();
+    const pending = await readPendingAiRequest();
+    setAiMode(pending?.aiMode || requestedMode || 'chat');
+    if (pending?.text && Date.now() - (pending.createdAt || 0) < 5 * 60 * 1000) {
+      const input = document.getElementById('ai-input');
+      if (input) {
+        input.value = String(pending.text).slice(0, 12000);
+        input.focus();
+      }
+      clearPendingAiRequest();
+    }
+  } else if (requestedView && VIEW_ORDER.includes(requestedView)) {
+    openView(requestedView);
+  }
 }
 
 let favoritesData = null;
@@ -968,9 +1173,11 @@ function initFavorites() {
   const navSearch = document.getElementById('favorites-nav-search');
   const tabHome = document.getElementById('tab-home');
   const tabFavorites = document.getElementById('tab-favorites');
+  const tabPorts = document.getElementById('tab-ports');
   const tabAi = document.getElementById('tab-ai');
   const viewHome = document.getElementById('view-home');
   const viewFavorites = document.getElementById('view-favorites');
+  const viewPorts = document.getElementById('view-ports');
   const viewAi = document.getElementById('view-ai');
   const { closeBtn } = getFavoritesLoadingElements();
 
@@ -984,6 +1191,7 @@ function initFavorites() {
     const entries = [
       { id: 'home', tab: tabHome, view: viewHome },
       { id: 'favorites', tab: tabFavorites, view: viewFavorites },
+      { id: 'ports', tab: tabPorts, view: viewPorts },
       { id: 'ai', tab: tabAi, view: viewAi }
     ];
     entries.forEach((entry) => {
@@ -994,6 +1202,8 @@ function initFavorites() {
     });
     if (currentViewId === 'ai') {
       ensureAiAssistantInitialized();
+    } else if (currentViewId === 'ports') {
+      renderDevPorts();
     }
     if (currentViewId !== 'favorites') {
       cancelFavoritesLoading();
@@ -1009,9 +1219,12 @@ function initFavorites() {
     });
   }
 
-  if (tabHome && tabFavorites && tabAi && viewHome && viewFavorites && viewAi) {
+  setActiveViewHandler = setActiveView;
+
+  if (tabHome && tabFavorites && tabPorts && tabAi && viewHome && viewFavorites && viewPorts && viewAi) {
     tabHome.addEventListener('click', () => setActiveView('home'));
     tabFavorites.addEventListener('click', () => setActiveView('favorites'));
+    tabPorts.addEventListener('click', () => setActiveView('ports'));
     tabAi.addEventListener('click', () => setActiveView('ai'));
 
     document.addEventListener('keydown', (e) => {
@@ -1084,7 +1297,9 @@ async function init() {
   initTime();
   initSearch();
   updatePlaceholder();
+  initDevPorts();
   initFavorites();
+  await handleLaunchParams();
   runWhenIdle(() => {
     migratePlainAiApiKey().catch(() => {
       delete config.aiApiKey;

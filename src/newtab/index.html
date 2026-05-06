@@ -18,6 +18,8 @@
         aria-controls="view-home" aria-selected="true">首页</button>
       <button type="button" class="view-tab" role="tab" id="tab-favorites" data-view="favorites"
         aria-controls="view-favorites" aria-selected="false">收藏导航</button>
+      <button type="button" class="view-tab" role="tab" id="tab-ports" data-view="ports"
+        aria-controls="view-ports" aria-selected="false">开发端口</button>
       <button type="button" class="view-tab" role="tab" id="tab-ai" data-view="ai" aria-controls="view-ai"
         aria-selected="false">AI 助手</button>
     </nav>
@@ -37,6 +39,16 @@
           autocomplete="off">
         <div id="favorites-nav-content" class="favorites-nav-content"></div>
       </div>
+    </div>
+    <div id="view-ports" class="view-pane hidden" role="tabpanel">
+      <section class="dev-ports" aria-label="本地开发端口">
+        <div class="dev-ports-toolbar">
+          <input type="search" id="dev-ports-search" class="dev-ports-search" placeholder="搜索项目、端口或地址..."
+            autocomplete="off">
+          <button type="button" id="dev-ports-refresh" class="dev-ports-refresh">刷新</button>
+        </div>
+        <div id="dev-ports-content" class="dev-ports-content"></div>
+      </section>
     </div>
     <div id="view-ai" class="view-pane hidden" role="tabpanel">
       <section class="ai-panel" aria-label="AI 助手">
@@ -66,6 +78,11 @@
             <div class="ai-mode-switch" role="tablist" aria-label="AI 模式">
               <button type="button" class="ai-mode-btn active" data-ai-mode="chat" aria-selected="true">问答</button>
               <button type="button" class="ai-mode-btn" data-ai-mode="naming" aria-selected="false">命名简称</button>
+              <button type="button" class="ai-mode-btn" data-ai-mode="error" aria-selected="false">报错解释</button>
+              <button type="button" class="ai-mode-btn" data-ai-mode="commit" aria-selected="false">Commit</button>
+              <button type="button" class="ai-mode-btn" data-ai-mode="regex" aria-selected="false">Regex</button>
+              <button type="button" class="ai-mode-btn" data-ai-mode="sql" aria-selected="false">SQL</button>
+              <button type="button" class="ai-mode-btn" data-ai-mode="api" aria-selected="false">API 分析</button>
             </div>
             <button type="button" id="ai-clear-chat" class="ai-clear-btn">清除记录</button>
           </div>
