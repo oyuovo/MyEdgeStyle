@@ -547,8 +547,211 @@ function createFavoriteItemEl(item, useNavCard = false) {
 
 function escapeHtml(s) {
   const div = document.createElement('div');
-  div.textContent = s;
+  div.textContent = String(s ?? '');
   return div.innerHTML;
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
+function sanitizeMarkdownUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value, window.location.href);
+    if (!['http:', 'https:', 'mailto:', 'tel:'].includes(url.protocol)) {
+      return '';
+    }
+    return url.href;
+  } catch (_) {
+    return '';
+  }
+}
+
+function renderInlineMarkdownHtml(text) {
+  const tokens = [];
+  const stash = (html) => {
+    const token = `@@AIMDTOKEN${tokens.length}@@`;
+    tokens.push({ token, html });
+    return token;
+  };
+  let source = String(text ?? '');
+
+  source = source.replace(/`([^`\n]+)`/g, (_, code) => {
+    return stash(`<code>${escapeHtml(code)}</code>`);
+  });
+
+  source = source.replace(/!?\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (match, label, url) => {
+    const safeUrl = sanitizeMarkdownUrl(url);
+    if (!safeUrl) return match;
+    return stash(`<a href="${escapeAttribute(safeUrl)}" target="_blank" rel="noreferrer noopener">${renderInlineMarkdownHtml(label)}</a>`);
+  });
+
+  let html = escapeHtml(source);
+  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  html = html.replace(/(^|[\s(>])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  html = html.replace(/(^|[\s(>])_([^_\n]+)_/g, '$1<em>$2</em>');
+  html = html.replace(/\n/g, '<br>');
+
+  tokens.forEach(({ token, html: tokenHtml }) => {
+    html = html.split(token).join(tokenHtml);
+  });
+  return html;
+}
+
+function splitMarkdownTableRow(line) {
+  let value = String(line || '').trim();
+  if (value.startsWith('|')) value = value.slice(1);
+  if (value.endsWith('|')) value = value.slice(0, -1);
+  return value.split('|').map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparator(line) {
+  if (!String(line || '').includes('|')) return false;
+  const cells = splitMarkdownTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function getMarkdownTableAlign(separatorCell) {
+  const cell = String(separatorCell || '').trim();
+  if (/^:-{3,}:$/.test(cell)) return 'center';
+  if (/^-{3,}:$/.test(cell)) return 'right';
+  if (/^:-{3,}$/.test(cell)) return 'left';
+  return '';
+}
+
+function lineStartsMarkdownBlock(line, nextLine = '') {
+  const value = String(line || '');
+  return !value.trim()
+    || /^\s*```/.test(value)
+    || /^\s{0,3}#{1,4}\s+/.test(value)
+    || /^\s{0,3}(?:-{3,}|\*{3,})\s*$/.test(value)
+    || /^\s{0,3}>\s?/.test(value)
+    || /^\s*[-*+]\s+/.test(value)
+    || /^\s*\d+[.)]\s+/.test(value)
+    || (value.includes('|') && isMarkdownTableSeparator(nextLine));
+}
+
+function renderMarkdownTable(lines, startIndex) {
+  const headers = splitMarkdownTableRow(lines[startIndex]);
+  const separators = splitMarkdownTableRow(lines[startIndex + 1]);
+  const rows = [];
+  let index = startIndex + 2;
+  while (index < lines.length && lines[index].trim() && lines[index].includes('|')) {
+    rows.push(splitMarkdownTableRow(lines[index]));
+    index += 1;
+  }
+
+  const headerHtml = headers.map((header, cellIndex) => {
+    const align = getMarkdownTableAlign(separators[cellIndex]);
+    const className = align ? ` class="ai-table-align-${align}"` : '';
+    return `<th${className}>${renderInlineMarkdownHtml(header)}</th>`;
+  }).join('');
+  const bodyHtml = rows.map((row) => {
+    const cells = headers.map((_, cellIndex) => {
+      const align = getMarkdownTableAlign(separators[cellIndex]);
+      const className = align ? ` class="ai-table-align-${align}"` : '';
+      return `<td${className}>${renderInlineMarkdownHtml(row[cellIndex] || '')}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  return {
+    html: `<div class="ai-markdown-table-wrap"><table><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`,
+    nextIndex: index
+  };
+}
+
+function renderMarkdownToHtml(markdown) {
+  const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
+  const html = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i += 1;
+      continue;
+    }
+
+    const fence = line.match(/^\s*```([A-Za-z0-9_-]+)?\s*$/);
+    if (fence) {
+      const codeLines = [];
+      i += 1;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1;
+      const language = fence[1] ? ` data-language="${escapeAttribute(fence[1])}"` : '';
+      html.push(`<pre${language}><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+      continue;
+    }
+
+    if (line.includes('|') && isMarkdownTableSeparator(lines[i + 1])) {
+      const table = renderMarkdownTable(lines, i);
+      html.push(table.html);
+      i = table.nextIndex;
+      continue;
+    }
+
+    const heading = line.match(/^\s{0,3}(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      html.push(`<h${level}>${renderInlineMarkdownHtml(heading[2].trim())}</h${level}>`);
+      i += 1;
+      continue;
+    }
+
+    if (/^\s{0,3}(?:-{3,}|\*{3,})\s*$/.test(line)) {
+      html.push('<hr>');
+      i += 1;
+      continue;
+    }
+
+    if (/^\s{0,3}>\s?/.test(line)) {
+      const quoteLines = [];
+      while (i < lines.length && /^\s{0,3}>\s?/.test(lines[i])) {
+        quoteLines.push(lines[i].replace(/^\s{0,3}>\s?/, ''));
+        i += 1;
+      }
+      html.push(`<blockquote>${renderMarkdownToHtml(quoteLines.join('\n'))}</blockquote>`);
+      continue;
+    }
+
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      const isOrdered = !!ordered;
+      const tag = isOrdered ? 'ol' : 'ul';
+      const items = [];
+      while (i < lines.length) {
+        const match = isOrdered ? lines[i].match(/^\s*\d+[.)]\s+(.+)$/) : lines[i].match(/^\s*[-*+]\s+(.+)$/);
+        if (!match) break;
+        items.push(`<li>${renderInlineMarkdownHtml(match[1])}</li>`);
+        i += 1;
+      }
+      html.push(`<${tag}>${items.join('')}</${tag}>`);
+      continue;
+    }
+
+    const paragraphLines = [];
+    while (i < lines.length && lines[i].trim() && !lineStartsMarkdownBlock(lines[i], lines[i + 1])) {
+      paragraphLines.push(lines[i]);
+      i += 1;
+    }
+    if (paragraphLines.length) {
+      html.push(`<p>${renderInlineMarkdownHtml(paragraphLines.join('\n'))}</p>`);
+    } else {
+      html.push(`<p>${renderInlineMarkdownHtml(line)}</p>`);
+      i += 1;
+    }
+  }
+
+  return html.join('');
 }
 
 function getFaviconUrl(pageUrl, size) {
@@ -672,6 +875,7 @@ const aiConversations = {};
 for (const mode of Object.keys(AI_MODE_CONFIG)) {
   aiConversations[mode] = [];
 }
+let aiMessageSeq = 0;
 let setActiveViewHandler = null;
 
 function getKnownAiMode(mode) {
@@ -871,7 +1075,23 @@ function getAiWelcomeText(mode = aiMode) {
   return AI_MODE_CONFIG[getKnownAiMode(mode)].welcome;
 }
 
-function createAiMessageElement(role, text) {
+function renderAiMessageBody(body, role, text, { streaming = false } = {}) {
+  if (!body) return;
+  body.classList.toggle('ai-markdown', role === 'assistant');
+  body.classList.toggle('ai-message-streaming', !!streaming);
+  if (role === 'assistant') {
+    body.innerHTML = renderMarkdownToHtml(text);
+    return;
+  }
+  body.textContent = text;
+}
+
+function scrollAiMessagesToBottom() {
+  const messages = document.getElementById('ai-messages');
+  if (messages) messages.scrollTop = messages.scrollHeight;
+}
+
+function createAiMessageElement(role, text, options = {}) {
   const item = document.createElement('article');
   item.className = `ai-message ai-message-${role}`;
   const label = document.createElement('div');
@@ -879,18 +1099,18 @@ function createAiMessageElement(role, text) {
   label.textContent = role === 'user' ? '你' : (role === 'error' ? '错误' : 'AI');
   const body = document.createElement('div');
   body.className = 'ai-message-body';
-  body.textContent = text;
+  renderAiMessageBody(body, role, text, options);
   item.appendChild(label);
   item.appendChild(body);
   return { item, body };
 }
 
-function appendAiMessageElement(role, text) {
+function appendAiMessageElement(role, text, options = {}) {
   const messages = document.getElementById('ai-messages');
   if (!messages) return null;
-  const { item, body } = createAiMessageElement(role, text);
+  const { item, body } = createAiMessageElement(role, text, options);
   messages.appendChild(item);
-  messages.scrollTop = messages.scrollHeight;
+  scrollAiMessagesToBottom();
   return body;
 }
 
@@ -904,15 +1124,41 @@ function renderAiMessages() {
     return;
   }
   conversation.forEach((message) => {
-    appendAiMessageElement(message.role, message.text);
+    message.body = appendAiMessageElement(message.role, message.text, { streaming: message.streaming });
   });
 }
 
 function addAiConversationMessage(role, text, mode = aiMode) {
-  const message = { role, text };
+  const message = { id: `ai-message-${++aiMessageSeq}`, role, text, streaming: false };
   getAiConversation(mode).push(message);
   const body = mode === aiMode ? appendAiMessageElement(role, text) : null;
+  message.body = body;
   return { message, body };
+}
+
+function updateAiConversationMessage(message, text, mode = aiMode, options = {}) {
+  if (!message) return;
+  message.text = text;
+  message.streaming = !!options.streaming;
+  if (mode !== aiMode) return;
+  let body = message.body;
+  if (!body || !body.isConnected) {
+    renderAiMessages();
+    body = message.body;
+  }
+  if (!body) return;
+  renderAiMessageBody(body, message.role, text, options);
+  scrollAiMessagesToBottom();
+}
+
+function removeAiConversationMessage(message, mode = aiMode) {
+  if (!message) return;
+  const conversation = getAiConversation(mode);
+  const index = conversation.indexOf(message);
+  if (index >= 0) {
+    conversation.splice(index, 1);
+  }
+  if (mode === aiMode) renderAiMessages();
 }
 
 function clearCurrentAiConversation() {
@@ -941,16 +1187,102 @@ function getAiSystemPrompt(mode = aiMode) {
   return AI_MODE_CONFIG[getKnownAiMode(mode)].systemPrompt;
 }
 
-function normalizeAiContent(data) {
-  const choice = data?.choices?.[0];
-  const content = choice?.message?.content ?? choice?.text ?? data?.output_text;
+function coerceAiContentToText(content) {
   if (Array.isArray(content)) {
-    return content.map((part) => part.text || part.content || '').join('').trim();
+    return content.map((part) => {
+      if (typeof part === 'string') return part;
+      return part?.text || part?.content || part?.delta || '';
+    }).join('');
   }
-  return String(content || '').trim();
+  return content == null ? '' : String(content);
 }
 
-async function requestAiAnswer(userText, mode = aiMode) {
+function normalizeAiContent(data) {
+  const choice = data?.choices?.[0];
+  const content = choice?.message?.content ?? choice?.text ?? data?.output_text ?? data?.content;
+  return coerceAiContentToText(content).trim();
+}
+
+function normalizeAiStreamDelta(data) {
+  const choice = data?.choices?.[0];
+  const content = choice?.delta?.content
+    ?? choice?.message?.content
+    ?? choice?.text
+    ?? (typeof data?.delta === 'string' ? data.delta : null)
+    ?? data?.output_text_delta
+    ?? data?.content;
+  return coerceAiContentToText(content);
+}
+
+function getAiStreamErrorMessage(error) {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+  return error.message || error.detail || error.type || '';
+}
+
+function parseAiStreamEvent(rawEvent) {
+  const dataLines = [];
+  String(rawEvent || '').split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('data:')) {
+      dataLines.push(trimmed.slice(5).trimStart());
+    }
+  });
+  if (!dataLines.length && String(rawEvent || '').trim().startsWith('{')) {
+    dataLines.push(String(rawEvent || '').trim());
+  }
+  return dataLines.join('\n').trim();
+}
+
+async function readAiStreamingAnswer(response, onDelta) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answer = '';
+
+  const handleEvent = (rawEvent) => {
+    const dataText = parseAiStreamEvent(rawEvent);
+    if (!dataText) return false;
+    if (dataText === '[DONE]') return true;
+
+    let payload = null;
+    try {
+      payload = JSON.parse(dataText);
+    } catch (_) {
+      return false;
+    }
+
+    if (payload?.error) {
+      throw new Error(getAiStreamErrorMessage(payload.error) || '接口返回错误。');
+    }
+
+    const delta = normalizeAiStreamDelta(payload);
+    if (delta) {
+      answer += delta;
+      onDelta?.(delta, answer);
+    }
+    return false;
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || '';
+    for (const event of events) {
+      if (handleEvent(event)) return answer.trim();
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    handleEvent(buffer);
+  }
+  return answer.trim();
+}
+
+async function requestAiAnswer(userText, mode = aiMode, onDelta) {
   const requestMode = getKnownAiMode(mode);
   const { apiUrl, model } = getAiRuntimeConfig();
   if (!apiUrl) throw new Error('请先配置 API 地址。');
@@ -972,7 +1304,7 @@ async function requestAiAnswer(userText, mode = aiMode) {
   }
   messages.push({ role: 'user', content: userText });
 
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream, application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   const response = await fetch(apiUrl, {
@@ -981,15 +1313,25 @@ async function requestAiAnswer(userText, mode = aiMode) {
     body: JSON.stringify({
       model,
       messages,
-      temperature: AI_MODE_CONFIG[requestMode].temperature
+      temperature: AI_MODE_CONFIG[requestMode].temperature,
+      stream: true
     })
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw new Error(`接口请求失败：${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 300)}` : ''}`);
   }
-  const data = await response.json();
-  const answer = normalizeAiContent(data);
+
+  const contentType = response.headers.get('content-type') || '';
+  let answer = '';
+  if (!response.body || contentType.includes('application/json')) {
+    const data = await response.json();
+    answer = normalizeAiContent(data);
+    if (answer) onDelta?.(answer, answer);
+  } else {
+    answer = await readAiStreamingAnswer(response, onDelta);
+  }
+
   if (!answer) throw new Error('接口返回为空，请检查模型或接口格式是否兼容。');
   return answer;
 }
@@ -1039,15 +1381,23 @@ function initAiAssistant() {
       const requestMode = aiMode;
       submit.disabled = true;
       submit.textContent = '请求中';
+      let pending = null;
       try {
         await saveAiConfigFromFields({ requireKey: true });
         addAiConversationMessage('user', text, requestMode);
         input.value = '';
-        const pending = addAiConversationMessage('assistant', '思考中...', requestMode);
-        const answer = await requestAiAnswer(text, requestMode);
-        pending.message.text = answer;
-        if (pending.body) pending.body.textContent = answer;
+        pending = addAiConversationMessage('assistant', '', requestMode);
+        updateAiConversationMessage(pending.message, '', requestMode, { streaming: true });
+        const answer = await requestAiAnswer(text, requestMode, (_, partialText) => {
+          updateAiConversationMessage(pending.message, partialText, requestMode, { streaming: true });
+        });
+        updateAiConversationMessage(pending.message, answer, requestMode);
       } catch (err) {
+        if (pending?.message && !pending.message.text) {
+          removeAiConversationMessage(pending.message, requestMode);
+        } else if (pending?.message) {
+          updateAiConversationMessage(pending.message, pending.message.text, requestMode);
+        }
         addAiConversationMessage('error', err?.message || '未知错误', requestMode);
       } finally {
         submit.disabled = false;
